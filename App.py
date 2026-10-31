@@ -4,50 +4,41 @@ import pandas as pd
 import yfinance as yf
 import ta
 import plotly.graph_objects as go
-import numpy as np
 
-st.set_page_config(page_title="Advanced Backtest Engine", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Raincheck Mirror Studio", page_icon="⚙️", layout="wide")
 
-st.title("🎛️ Tactical Backtest & Allocation Matrix Studio")
-st.markdown("Replicate the flagship systematic rules, backtest cumulative returns against QQQ, and analyze dynamic portfolio allocation shifts.")
+st.title("🎛️ Raincheck Fund Mirror Layout Studio")
+st.markdown("""
+This interface mirrors the official execution assets (**TQQQ, SQQQ, TBIL**) while preserving 
+your custom breadth constituent indicators to drive the core Daily Sentiment Score.
+""")
 
 # ----------------------------------------------------
-# SYSTEM INTERACTION CONTROL PANEL
+# SIGNAL CONTROLS (THE LOOK-UNDER-THE-HOOD ENGINE)
 # ----------------------------------------------------
-st.sidebar.header("⚙️ Core Controls")
-
-# Custom ticker workspace for the Internal Breadth Engine
+st.sidebar.header("📡 Internal Breadth Signals")
 default_tickers = "MSFT, AAPL, NVDA, AMZN, META, GOOGL, GOOG, AVGO, TSLA, COST"
-user_ticker_string = st.sidebar.text_area("Breadth Constituents Basket:", default_tickers)
+user_ticker_string = st.sidebar.text_area("Signal Target Tickers:", default_tickers)
 custom_tickers = [t.strip().upper() for t in user_ticker_string.split(",") if t.strip()]
 
-st.sidebar.subheader("💰 Strategy Allocation Weights")
-max_tqqq = st.sidebar.slider("Max TQQQ Exposure (%)", 50, 100, 75)
-base_income = st.sidebar.slider("Income ETF Target (%)", 0, 50, 20)
+st.sidebar.subheader("💰 Asset Threshold Profiles")
+max_tqqq_pct = st.sidebar.slider("Maximum TQQQ Target (%)", 50, 100, 75)
+income_target_pct = st.sidebar.slider("Income Allocation Target (%)", 0, 50, 20)
 
 @st.cache_data(ttl=3600)
-def run_advanced_simulation(tickers, max_leverage, income_weight):
+def process_synchronized_mirror_engine(tickers, max_tqqq, base_income):
     end_date = datetime.date.today()
     start_date = end_date - datetime.timedelta(days=730)
     buffer_start = start_date - datetime.timedelta(days=50)
     
     # Download Core Baseline Benchmarks
-    assets_to_download = ["QQQ", "TQQQ", "TBIL"]
-    market_data = yf.download(assets_to_download, start=buffer_start, end=end_date, progress=False)
-    
-    if "Close" not in market_data or market_data["Close"]["QQQ"].empty:
+    qqq = yf.download("QQQ", start=buffer_start, end=end_date, progress=False)
+    if qqq.empty:
         return pd.DataFrame()
         
-    qqq_close = market_data["Close"]["QQQ"]
-    tqqq_close = market_data["Close"]["TQQQ"]
-    
-    # Fallback simulation vector if TBIL historical price data is flat/unstable
-    tbil_close = market_data["Close"]["TBIL"] if "TBIL" in market_data["Close"] else pd.Series(50.0, index=qqq_close.index)
-    
-    # Calculate System Indicators on QQQ
-    ema9 = ta.trend.ema_indicator(qqq_close, window=9)
-    ema21 = ta.trend.ema_indicator(qqq_close, window=21)
-    rsi = ta.momentum.rsi(qqq_close, window=14)
+    qqq['EMA9'] = ta.trend.ema_indicator(qqq['Close'], window=9)
+    qqq['EMA21'] = ta.trend.ema_indicator(qqq['Close'], window=21)
+    qqq['RSI'] = ta.momentum.rsi(qqq['Close'], window=14)
     
     # Process Breadth Data Universe
     constituent_data = {}
@@ -61,17 +52,20 @@ def run_advanced_simulation(tickers, max_leverage, income_weight):
             continue
             
     df_breadth = pd.DataFrame(constituent_data).ffill()
+    valid_dates = qqq.loc[start_date:].index
     
-    # Sync structural index frame
-    valid_dates = qqq_close.loc[start_date:].index
     records = []
+    trend_days = 0
+    prev_state_positive = True
     
-    for idx, date in enumerate(valid_dates):
+    for date in valid_dates:
+        row = qqq.loc[date]
+        
         # 1. Generate Algorithmic Sentiment Score
         macro = 0
-        if pd.notna(ema9.loc[date]) and pd.notna(ema21.loc[date]):
-            macro += 1.5 if qqq_close.loc[date] > ema9.loc[date] > ema21.loc[date] else -1.5
-        macro += 1.5 if (pd.notna(rsi.loc[date]) and rsi.loc[date] > 50) else -1.5
+        if pd.notna(row['EMA9']) and pd.notna(row['EMA21']):
+            macro += 1.5 if row['Close'] > row['EMA9'] > row['EMA21'] else -1.5
+        macro += 1.5 if (pd.notna(row['RSI']) and row['RSI'] > 50) else -1.5
         
         if date in df_breadth.index:
             daily_sig = df_breadth.loc[date]
@@ -84,125 +78,100 @@ def run_advanced_simulation(tickers, max_leverage, income_weight):
             
         score = max(-9, min(9, round(macro + breadth_score)))
         
-        # 2. Map Capital Allocations Dynamically
-        if score > 0:
-            scale = score / 9.0
-            tqqq_pct = max(50.0, round(max_leverage * scale, 1))
-            inc_pct = income_weight
-            tbil_pct = max(0.0, round(100.0 - (tqqq_pct + inc_pct), 1))
-            if tqqq_pct + inc_pct > 100.0:
-                inc_pct = round(100.0 - tqqq_pct, 1)
-                tbil_pct = 0.0
-            profile = "🟢 Bullish Uptrend"
+        # Track Consecutive Trend History
+        is_positive = score > 0
+        if is_positive == prev_state_positive:
+            trend_days += 1
         else:
-            tqqq_pct, inc_pct, tbil_pct = 0.0, 0.0, 100.0
-            profile = "🔴 Downtrend Defense"
+            trend_days = 1
+            prev_state_positive = is_positive
             
+        # Detect pricing pullback mechanics
+        idx_pos = qqq.index.get_loc(date)
+        price_pullback = False
+        if idx_pos > 0 and is_positive:
+            price_pullback = qqq['Close'].iloc[idx_pos] < qqq['Close'].iloc[idx_pos - 1]
+
+        # 2. Map Execution Weights Matching Raincheck Strategy Rules
+        tqqq, sqqq, income, tbil = 0.0, 0.0, 0.0, 0.0
+        
+        if score < 0:  # BEARISH / SHORT REGIME
+            if score <= -6:
+                sqqq, tbil = 50.0, 50.0
+                status = "🔮 Short Overlay: Deploying Active SQQQ Targets"
+            else:
+                tbil = 100.0
+                status = "🍏 Capital Preservation: 100% Cash Yield Protection"
+        elif score == 0:  # NEUTRAL CIRCUIT BREAKER
+            tbil = 100.0
+            status = "⚪ Neutral Stance: Safe-Haven Extraction"
+        else:  # BULLISH / LONG REGIME
+            if trend_days <= 1:
+                tqqq, income, tbil = 67.0, base_income, round(100.0 - (67.0 + base_income), 1)
+                status = "🚨 Uptrend Triggered: Initial Capital Deployment"
+            elif price_pullback or score >= 7:
+                tqqq, income, tbil = max_tqqq, base_income, round(100.0 - (max_tqqq + base_income), 1)
+                status = "🚀 Aggressive Upside: Maximizing Long Momentum"
+            elif 1 <= score <= 4:
+                tqqq, income, tbil = 50.0, 30.0, 20.0
+                status = "💎 Weakening Trend: Taking Profits & Sizing Down Leverage"
+            else:
+                tqqq, income, tbil = 70.0, base_income, round(100.0 - (70.0 + base_income), 1)
+                status = "📈 Standard Allocation: Tracking Trend Continuity"
+
         records.append({
             "Date": date,
-            "QQQ_Close": float(qqq_close.loc[date]),
-            "TQQQ_Close": float(tqqq_close.loc[date]),
-            "TBIL_Close": float(tbil_close.loc[date]),
+            "QQQ Price": round(float(row['Close']), 2),
             "Score": int(score),
-            "Profile": profile,
-            "TQQQ %": tqqq_pct,
-            "Income %": inc_pct,
-            "TBIL %": tbil_pct
+            "Status": status,
+            "TQQQ %": max(0.0, tqqq),
+            "SQQQ %": max(0.0, sqqq),
+            "Income %": max(0.0, income),
+            "TBIL %": max(0.0, tbil)
         })
         
-    df_sim = pd.DataFrame(records)
-    
-    # 3. Compile Cumulative Performance Metrics
-    df_sim["QQQ_Return"] = df_sim["QQQ_Close"].pct_change().fillna(0)
-    df_sim["TQQQ_Return"] = df_sim["TQQQ_Close"].pct_change().fillna(0)
-    df_sim["TBIL_Return"] = df_sim["TBIL_Close"].pct_change().fillna(0)
-    
-    # Approximate Income ETF performance (QQQ Return + static writing yield cushion)
-    df_sim["Income_Return"] = (df_sim["QQQ_Return"] * 0.6) + (0.08 / 252) 
-    
-    strat_returns = []
-    for i in range(len(df_sim)):
-        if i == 0:
-            strat_returns.append(0.0)
-            continue
-            
-        # Strategy shifts allocations based on the PRIOR day's closed signal score
-        t_pct = df_sim.loc[i-1, "TQQQ %"] / 100.0
-        inc_pct = df_sim.loc[i-1, "Income %"] / 100.0
-        tb_pct = df_sim.loc[i-1, "TBIL %"] / 100.0
-        
-        daily_perf = (t_pct * df_sim.loc[i, "TQQQ_Return"] + 
-                      inc_pct * df_sim.loc[i, "Income_Return"] + 
-                      tb_pct * df_sim.loc[i, "TBIL_Return"])
-        strat_returns.append(daily_perf)
-        
-    df_sim["Strat_Return"] = strat_returns
-    
-    # Compound total tracking curves from a baseline index starting value of $10,000
-    df_sim["Buy_Hold_QQQ"] = (1 + df_sim["QQQ_Return"]).cumprod() * 10000
-    df_sim["Tactical_Strategy"] = (1 + df_sim["Strat_Return"]).cumprod() * 10000
-    
-    return df_sim
+    return pd.DataFrame(records)
 
-# Execute Core Backtest Machine
-with st.spinner("Processing tactical returns and allocation modeling matrix..."):
-    sim_df = run_advanced_simulation(custom_tickers, max_tqqq, base_income)
+with st.spinner("Synchronizing asset frameworks and score metrics..."):
+    df_mirror = process_synchronized_mirror_engine(custom_tickers, max_tqqq_pct, income_target_pct)
 
-if not sim_df.empty:
+if not df_mirror.empty:
     # ----------------------------------------------------
-    # RUN CHART VISUALIZATION
+    # HISTORICAL EVALUATION HOVER LOOKUP
     # ----------------------------------------------------
-    st.subheader("📈 Cumulative Growth Comparison (2-Year Backtest)")
+    st.subheader("🔍 Interactive Target Matrix Analysis")
+    lookup_date = st.date_input("Pick Analysis Evaluation Date:", value=df_mirror["Date"].max().date(),
+                                min_value=df_mirror["Date"].min().date(), max_value=df_mirror["Date"].max().date())
     
-    final_qqq = sim_df["Buy_Hold_QQQ"].iloc[-1]
-    final_strat = sim_df["Tactical_Strategy"].iloc[-1]
+    selected_day = df_mirror[df_mirror["Date"].dt.date == lookup_date]
     
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Final Strategy Value (Base $10k)", f"${final_strat:,.2f}")
-    c2.metric("Final QQQ Buy & Hold Value", f"${final_qqq:,.2f}")
-    c3.metric("Strategy Alpha Outperformance", f"{((final_strat - final_qqq)/final_qqq)*100:+.2f}%")
-    
-    fig_growth = go.Figure()
-    fig_growth.add_trace(go.Scatter(x=sim_df["Date"], y=sim_df["Tactical_Strategy"], mode='lines', name='Tactical Engine Strategy', line=dict(color='#2ca02c', width=2.5)))
-    fig_growth.add_trace(go.Scatter(x=sim_df["Date"], y=sim_df["Buy_Hold_QQQ"], mode='lines', name='Pure QQQ Buy & Hold', line=dict(color='#7f7f7f', width=1.5)))
-    fig_growth.update_layout(hovermode="x unified", legend=dict(orientation="h", y=1.02, x=0), margin=dict(l=40, r=40, t=20, b=40), height=400)
-    st.plotly_chart(fig_growth, use_container_width=True)
-    
+    if not selected_day.empty:
+        r = selected_day.iloc
+        st.info(f"**Automated State Diagnosis:** {r['Status']} (Day Signal: {r['Score']})")
+        
+        # Display 4 Metrics Grid
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("TQQQ Weight (3x Long)", f"{r['TQQQ %']}%")
+        m2.metric("SQQQ Weight (3x Short)", f"{r['SQQQ %']}%")
+        m3.metric("Income ETF Weight", f"{r['Income %']}%")
+        m4.metric("TBIL Cash Reserve", f"{r['TBIL %']}%")
+        
+        # Render Donut Graph with Custom Assigned Palette String Colors
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=['TQQQ (3x Long)', 'SQQQ (3x Short)', 'Income ETFs', 'TBIL Cash'],
+            values=[r['TQQQ %'], r['SQQQ %'], r['Income %'], r['TBIL %']],
+            hole=.4,
+            marker=dict(colors=['#E11D48', '#9333EA', '#2563EB', '#16A34A']),
+            sort=False
+        )])
+        fig_pie.update_layout(height=280, margin=dict(l=20, r=20, t=20, b=20))
+        st.plotly_chart(fig_pie, use_container_width=True)
+
     st.markdown("---")
+    st.subheader("🗃️ Mirror Strategy Allocation Ledger")
     
-    # ----------------------------------------------------
-    # HISTORICAL ALLOCATION MAPPER LOOKUP MODULE
-    # ----------------------------------------------------
-    st.subheader("🔍 Historical Score Allocation Matrix Lookup")
-    
-    # Date Picker for historical lookup
-    lookup_date = st.date_input("Pick a Date to Analyze Strategy Stance:", value=sim_df["Date"].max().date(),
-                                min_value=sim_df["Date"].min().date(), max_value=sim_df["Date"].max().date())
-    
-    selected_row = sim_df[sim_df["Date"].dt.date == lookup_date]
-    
-    if not selected_row.empty:
-        r = selected_row.iloc[0]
-        
-        # AUTOMATED INFO TEXT LOGIC BASED ON SENTIMENT SCORE
-        st.markdown(f"#### 🛡️ System Diagnostic Stance For {lookup_date.strftime('%B %d, %Y')}")
-        
-        if r["Score"] > 0:
-            st.success(f"**Score: +{r['Score']} ({r['Profile']})** | Market internals are structurally sound. The macro indicators confirm strong buyer velocity, and the majority of underlying stocks are holding their medium-term trends.")
-            st.markdown(f"""
-            **Automated Asset Sizing Response:**
-            *   **TQQQ Core:** Scaled upward to **{r['TQQQ %']}%** of the total portfolio value to capture high-beta leveraged index growth.
-            *   **Income Stability:** Leveraged with a fixed target of **{r['Income %']}%** to compound yield distributions.
-            *   **Uninvested Capital:** Remaining cash buffer of **{r['TBIL %']}%** parked safely in short-term T-Bills.
-            """)
-        elif r["Score"] == 0:
-            st.info(f"**Score: 0 (Neutral Border State)** | The market is experiencing extreme structural fragility. Underlying breadth is breaking down, signaling high risk for a complete trend reversal.")
-            st.markdown("**Automated Asset Sizing Response:** The system triggers an allocation shift to **100% Cash Defense (TBIL)**. Zero leverage allowed.")
-        else:
-            st.error(f"**Score: {r['Score']} ({r['Profile']})** | Market breakdown confirmed. QQQ momentum handles are trading in bearish configurations, and defensive overlays have taken complete dominance.")
-            st.markdown(f"""
-            **Automated Asset Sizing Response:**
-            *   **Risk Liquidation:** TQQQ and Income structures are locked at **0.0%** exposure.
-            *   **Capital Preservation:** Portfolio exposure completely defaults to **100.0% Cash Reserve (TBIL)** to eliminate compounding decay drawdown velocity.
-            """)
-            
+    display_df = df_mirror.copy()
+    display_df["Date"] = display_df["Date"].dt.date
+    st.dataframe(display_df.sort_values(by="Date", ascending=False), use_container_width=True, hide_index=True)
+else:
+    st.error("Data pipeline mismatch. Verify internet connections.")
