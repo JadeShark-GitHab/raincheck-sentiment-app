@@ -71,12 +71,11 @@ def process_raincheck_exact_rolling_engine(tickers):
     for i in range(1, len(df_h)):
         if df_h.loc[i, "Is_Pos"] != df_h.loc[s_idx, "Is_Pos"] or i == len(df_h) - 1:
             end_idx = i - 1 if df_h.loc[i, "Is_Pos"] != df_h.loc[s_idx, "Is_Pos"] else i
-            sr, er = df_h.loc[s_idx], df_h.loc[e_idx]
+            sr, er = df_h.loc[s_idx], df_h.loc[end_idx]  # FIXED TYPO: Synchronized e_idx variable to end_idx
             q_p = ((er["QQQ"] - sr["QQQ"]) / sr["QQQ"]) * 100
             s_p = ((er["SQQQ"] - sr["SQQQ"]) / sr["SQQQ"]) * 100
             
-            # FIXED COLOR TEXT ASSIGNMENT LOGIC: Green for Up, Red for Down
-            t_log.append({"Classification": "🟢 UPTREND" if sr["Is_Pos"] else "🔴 DOWNTREND", "Started Date": sr["Date"].strftime('%Y-%m-%d'), "Finished Date": er["Date"].strftime('%Y-%m-%d'), "Duration (Days)": (e_idx - s_idx) + 1, "QQQ P&L": f"{q_p:+.2f}%", "SQQQ P&L": f"{s_p:+.2f}%"})
+            t_log.append({"Classification": "🟢 UPTREND" if sr["Is_Pos"] else "🔴 DOWNTREND", "Started Date": sr["Date"].strftime('%Y-%m-%d'), "Finished Date": er["Date"].strftime('%Y-%m-%d'), "Duration (Days)": (end_idx - s_idx) + 1, "QQQ P&L": f"{q_p:+.2f}%", "SQQQ P&L": f"{s_p:+.2f}%"})
             s_idx = i
             
     f_wave = pd.to_datetime("2026-10-21")
@@ -92,7 +91,6 @@ def process_raincheck_exact_rolling_engine(tickers):
         s_r = ((row["SQQQ"] - 36.48) / 36.48) * 100
         if row["Date"].strftime('%Y-%m-%d') == "2026-10-30": q_r, s_r = -4.79, 14.67
         
-        # FIXED TREND COUNT SIGN LOGIC: Downtrend values display as negative numbers
         count_val = f"-{row['Count']}" if not row["Is_Pos"] else f"+{row['Count']}"
         df_ledg.append({"Market Signal": row["Score"], "Trend Count": count_val, "QQQ Close": f"${row['QQQ']:,.2f}", "QQQ Return": f"{q_r:+.2f}%", "SQQQ Close": f"${row['SQQQ']:,.2f}", "SQQQ Return": f"{s_r:+.2f}%", "Date": row["Date"].strftime('%a %m/%d/%y')})
         
@@ -121,13 +119,13 @@ if not df_h.empty:
     
     st.markdown("---")
     
-    # TABLE 2: POSITION SESSION LEDGER (PLACED VERTICALLY UNDERNEATH TABLE 1)
+    # TABLE 2: POSITION SESSION LEDGER
     st.subheader("📋 Core Running System Session Ledger")
     st.dataframe(df_ledg.sort_index(ascending=False), use_container_width=True, hide_index=True)
     
     st.markdown("---")
     
-    # TABLE 3: HOLDINGS MATRIX (PLACED IN A FULL-WIDTH ROW AT THE BOTTOM)
+    # TABLE 3: HOLDINGS MATRIX
     st.subheader("📊 SQQQ vs QQQ Holdings Comparison")
     st.dataframe(df_hold.drop(columns=["raw"]), use_container_width=True, hide_index=True)
 else:
