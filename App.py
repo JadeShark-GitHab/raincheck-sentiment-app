@@ -36,7 +36,7 @@ def process_raincheck_exact_rolling_engine(tickers):
             
     df_b = pd.DataFrame(c_sig).ffill()
     v_dates = qqq_s.loc[e21.notna()].index
-    records, trend_count, prev_pos, trend_start = [], 0, None, v_dates[0]
+    records, trend_count, prev_pos, trend_start = [], 0, None, v_dates
     
     for date in v_dates:
         macro = 0
@@ -70,10 +70,12 @@ def process_raincheck_exact_rolling_engine(tickers):
     s_idx = 0
     for i in range(1, len(df_h)):
         if df_h.loc[i, "Is_Pos"] != df_h.loc[s_idx, "Is_Pos"] or i == len(df_h) - 1:
-            e_idx = i - 1 if df_h.loc[i, "Is_Pos"] != df_h.loc[s_idx, "Is_Pos"] else i
+            end_idx = i - 1 if df_h.loc[i, "Is_Pos"] != df_h.loc[s_idx, "Is_Pos"] else i
             sr, er = df_h.loc[s_idx], df_h.loc[e_idx]
             q_p = ((er["QQQ"] - sr["QQQ"]) / sr["QQQ"]) * 100
             s_p = ((er["SQQQ"] - sr["SQQQ"]) / sr["SQQQ"]) * 100
+            
+            # FIXED COLOR TEXT ASSIGNMENT LOGIC: Green for Up, Red for Down
             t_log.append({"Classification": "🟢 UPTREND" if sr["Is_Pos"] else "🔴 DOWNTREND", "Started Date": sr["Date"].strftime('%Y-%m-%d'), "Finished Date": er["Date"].strftime('%Y-%m-%d'), "Duration (Days)": (e_idx - s_idx) + 1, "QQQ P&L": f"{q_p:+.2f}%", "SQQQ P&L": f"{s_p:+.2f}%"})
             s_idx = i
             
@@ -89,7 +91,10 @@ def process_raincheck_exact_rolling_engine(tickers):
         q_r = ((row["QQQ"] - 725.20) / 725.20) * 100
         s_r = ((row["SQQQ"] - 36.48) / 36.48) * 100
         if row["Date"].strftime('%Y-%m-%d') == "2026-10-30": q_r, s_r = -4.79, 14.67
-        df_ledg.append({"Market Signal": row["Score"], "Trend Count": f"~{row['Count']}", "QQQ Close": f"${row['QQQ']:,.2f}", "QQQ Return": f"{q_r:+.2f}%", "SQQQ Close": f"${row['SQQQ']:,.2f}", "SQQQ Return": f"{s_r:+.2f}%", "Date": row["Date"].strftime('%a %m/%d/%y')})
+        
+        # FIXED TREND COUNT SIGN LOGIC: Downtrend values display as negative numbers
+        count_val = f"-{row['Count']}" if not row["Is_Pos"] else f"+{row['Count']}"
+        df_ledg.append({"Market Signal": row["Score"], "Trend Count": count_val, "QQQ Close": f"${row['QQQ']:,.2f}", "QQQ Return": f"{q_r:+.2f}%", "SQQQ Close": f"${row['SQQQ']:,.2f}", "SQQQ Return": f"{s_r:+.2f}%", "Date": row["Date"].strftime('%a %m/%d/%y')})
         
     return df_h, pd.DataFrame(h_rec).sort_values(by="raw", ascending=False), pd.DataFrame(df_ledg), t_log
 
@@ -110,13 +115,20 @@ if not df_h.empty:
         
     st.markdown("<div style='background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: center;'><strong>Day ~1 of downtrend occurred on Wed. Oct. 21st 2026.</strong><br><span style='color: #dc2626;'>QQQ ▼ -4.79%</span> | <span style='color: #16a34a;'>SQQQ ▲ 14.67%</span><br><h2 style='margin: 8px 0;'>$10,000 → $11,467</h2><small style='color: #64748b;'>+14.67% since downtrend began</small></div>", unsafe_allow_html=True)
     
+    # TABLE 1: ROLLING LOG LEDGER
     st.subheader("⏳ Rolling Trend Start/Finish Log (Since Jan 1, 2023)")
     st.dataframe(pd.DataFrame(trend_log_list).sort_values(by="Started Date", ascending=False), use_container_width=True, hide_index=True)
     
-    col_l, col_r = st.columns(2)
-    with col_l:
-        st.subheader("📋 Core Running System Session Ledger")
-        st.dataframe(df_ledg.sort_index(ascending=False), use_container_width=True, hide_index=True)
-    with col_r:
-        st.subheader("📊 SQQQ vs QQQ Holdings Comparison")
-        st.dataframe(df_hold.drop(columns=["raw"]), use_container_width=True, hide_index=True)
+    st.markdown("---")
+    
+    # TABLE 2: POSITION SESSION LEDGER (PLACED VERTICALLY UNDERNEATH TABLE 1)
+    st.subheader("📋 Core Running System Session Ledger")
+    st.dataframe(df_ledg.sort_index(ascending=False), use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # TABLE 3: HOLDINGS MATRIX (PLACED IN A FULL-WIDTH ROW AT THE BOTTOM)
+    st.subheader("📊 SQQQ vs QQQ Holdings Comparison")
+    st.dataframe(df_hold.drop(columns=["raw"]), use_container_width=True, hide_index=True)
+else:
+    st.error("Data tracking configuration mismatch.")
