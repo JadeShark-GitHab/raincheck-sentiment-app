@@ -6,15 +6,16 @@ import ta
 import plotly.graph_objects as go
 import numpy as np
 
-st.set_page_config(page_title="Raincheck Alpha Pro Studio", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Raincheck Wave Studio", page_icon="🛡️", layout="wide")
 
-st.title("🛡️ Raincheck Algorithmic Execution & Wave Benchmarker")
+st.title("🛡️ Raincheck Systematic Wave Studio & Benchmarker")
 st.markdown("""
-This institutional-grade studio mirrors **Raincheck Fund's** execution assets (**TQQQ, SQQQ, TBIL**) while evaluating cycle entry points, rolling trend wave performance, and custom date calculations.
+This institutional framework evaluates **TQQQ, SQQQ, and TBIL** tracking execution. 
+It features automated **Trend Reversal Markers**, **Active Cycle P&L monitoring**, and a **Custom Date Range Benchmarker**.
 """)
 
 # ----------------------------------------------------
-# SYSTEM INTERACTION CORE CONTROLS
+# SYSTEM INTERACTION SIDEBAR PANEL
 # ----------------------------------------------------
 st.sidebar.header("📡 Internal Breadth Signals")
 default_tickers = "MSFT, AAPL, NVDA, AMZN, META, GOOGL, GOOG, AVGO, TSLA, COST"
@@ -26,7 +27,7 @@ max_tqqq_pct = st.sidebar.slider("Maximum TQQQ Target (%)", 50, 100, 75)
 income_target_pct = st.sidebar.slider("Income Allocation Target (%)", 0, 50, 20)
 
 @st.cache_data(ttl=3600)
-def process_advanced_wave_engine(tickers, max_tqqq, base_income):
+def process_comprehensive_wave_studio(tickers, max_tqqq, base_income):
     end_date = datetime.date.today()
     start_date = end_date - datetime.timedelta(days=730)
     buffer_start = start_date - datetime.timedelta(days=60)
@@ -43,7 +44,7 @@ def process_advanced_wave_engine(tickers, max_tqqq, base_income):
     sqqq_close = market_data["Close"]["SQQQ"]
     tbil_close = market_data["Close"]["TBIL"] if "TBIL" in market_data["Close"] else pd.Series(50.0, index=qqq_close.index)
     
-    # Calculate System Signal Indicators
+    # Calculate Signals
     ema9 = ta.trend.ema_indicator(qqq_close, window=9)
     ema21 = ta.trend.ema_indicator(qqq_close, window=21)
     rsi = ta.momentum.rsi(qqq_close, window=14)
@@ -64,7 +65,7 @@ def process_advanced_wave_engine(tickers, max_tqqq, base_income):
     
     records = []
     trend_days = 0
-    prev_state_positive = True
+    prev_state_positive = None
     current_regime_start = valid_dates[0]
     
     for date in valid_dates:
@@ -88,10 +89,15 @@ def process_advanced_wave_engine(tickers, max_tqqq, base_income):
         score = max(-9, min(9, round(macro + breadth_score)))
         is_positive = score > 0
         
-        # Track Structural Trend Start Changes
-        if is_positive == prev_state_positive:
+        # --- TREND REVERSAL MARKERS LOOP ---
+        is_reversal = False
+        if prev_state_positive is None:
+            prev_state_positive = is_positive
+            trend_days = 1
+        elif is_positive == prev_state_positive:
             trend_days += 1
         else:
+            is_reversal = True
             trend_days = 1
             prev_state_positive = is_positive
             current_regime_start = date
@@ -101,23 +107,22 @@ def process_advanced_wave_engine(tickers, max_tqqq, base_income):
         if idx_pos > 0 and is_positive:
             price_pullback = qqq_close.iloc[idx_pos] < qqq_close.iloc[idx_pos - 1]
 
-        # Allocation Engine Assignment Rules
+        # Sizing Assignment Rules
         tqqq_w, sqqq_w, inc_w, tbil_w = 0.0, 0.0, 0.0, 0.0
         if score < 0:
+            regime_label = "Short Regime"
             if score <= -6:
                 sqqq_w, tbil_w = 50.0, 50.0
                 status = "Short Overlay (Active SQQQ)"
-                regime_type = "Down-Trend Wave"
             else:
                 tbil_w = 100.0
                 status = "Defensive Cash Buffer"
-                regime_type = "Down-Trend Wave"
         elif score == 0:
             tbil_w = 100.0
             status = "Neutral Circuit Breaker"
-            regime_type = "Neutral Intermission"
+            regime_label = "Neutral State"
         else:
-            regime_type = "Up-Trend Wave"
+            regime_label = "Long Regime"
             if trend_days <= 1:
                 tqqq_w, inc_w, tbil_w = 67.0, base_income, round(100.0 - (67.0 + base_income), 1)
                 status = "Initial Uptrend Allocation"
@@ -139,8 +144,10 @@ def process_advanced_wave_engine(tickers, max_tqqq, base_income):
             "TBIL_Close": float(tbil_close.loc[date]),
             "Score": int(score),
             "Status": status,
-            "Regime_Type": regime_type,
+            "Regime_Type": regime_label,
             "Regime_Start": current_regime_start,
+            "Trend_Duration": trend_days,
+            "Reversal_Event": "⚠️ REVERSAL TRIGGERED" if is_reversal else "Continuation",
             "TQQQ %": max(0.0, tqqq_w),
             "SQQQ %": max(0.0, sqqq_w),
             "Income %": max(0.0, inc_w),
@@ -149,12 +156,12 @@ def process_advanced_wave_engine(tickers, max_tqqq, base_income):
         
     df_sim = pd.DataFrame(records)
     
-    # Calculate returns for compounding calculation loops
+    # Calculate performance return arrays
     df_sim["QQQ_Ret"] = df_sim["QQQ_Close"].pct_change().fillna(0)
     df_sim["TQQQ_Ret"] = df_sim["TQQQ_Close"].pct_change().fillna(0)
     df_sim["SQQQ_Ret"] = df_sim["SQQQ_Close"].pct_change().fillna(0)
     df_sim["TBIL_Ret"] = df_sim["TBIL_Close"].pct_change().fillna(0)
-    df_sim["Inc_Ret"] = (df_sim["QQQ_Ret"] * 0.6) + (0.08 / 252) # Proxy Covered-Call Math
+    df_sim["Inc_Ret"] = (df_sim["QQQ_Ret"] * 0.6) + (0.08 / 252)
     
     strat_returns = [0.0]
     for i in range(1, len(df_sim)):
@@ -170,34 +177,29 @@ def process_advanced_wave_engine(tickers, max_tqqq, base_income):
         strat_returns.append(daily_perf)
         
     df_sim["Strat_Ret"] = strat_returns
-    df_sim["Strat_Cum"] = (1 + df_sim["Strat_Ret"]).cumprod()
-    df_sim["QQQ_Cum"] = (1 + df_sim["QQQ_Ret"]).cumprod()
-    
     return df_sim
 
-with st.spinner("Processing execution layers and structural trend vectors..."):
-    df_master = process_advanced_wave_engine(custom_tickers, max_tqqq_pct, income_target_pct)
+with st.spinner("Processing advanced wave models..."):
+    df_master = process_comprehensive_wave_studio(custom_tickers, max_tqqq_pct, income_target_pct)
 
 if not df_master.empty:
     df_master["Date_Only"] = df_master["Date"].dt.date
-    
-    # ----------------------------------------------------
-    # SECTION 1: CUSTOM DATE PERFORMANCE RANGE CALCULATOR
-    # ----------------------------------------------------
-    st.subheader("📆 Custom Date Range P&L Benchmarker")
-    col_d1, col_d2 = st.columns(2)
     min_sim_date = df_master["Date_Only"].min()
     max_sim_date = df_master["Date_Only"].max()
     
+    # ----------------------------------------------------
+    # ENHANCEMENT 3: CUSTOM DATE RANGE BENCHMARKER
+    # ----------------------------------------------------
+    st.subheader("📆 Custom Date Range Performance Benchmarker")
+    col_d1, col_d2 = st.columns(2)
     with col_d1:
-        custom_start = st.date_input("Start Date Evaluation:", value=min_sim_date, min_value=min_sim_date, max_value=max_sim_date)
+        custom_start = st.date_input("Custom Range Start Date:", value=min_sim_date, min_value=min_sim_date, max_value=max_sim_date)
     with col_d2:
-        custom_end = st.date_input("End Date Evaluation:", value=max_sim_date, min_value=min_sim_date, max_value=max_sim_date)
+        custom_end = st.date_input("Custom Range End Date:", value=max_sim_date, min_value=min_sim_date, max_value=max_sim_date)
         
     if custom_start < custom_end:
         range_df = df_master[(df_master["Date_Only"] >= custom_start) & (df_master["Date_Only"] <= custom_end)].copy()
         if not range_df.empty:
-            # Rebase metrics over user window
             range_df["Strat_Win_Cum"] = (1 + range_df["Strat_Ret"]).cumprod()
             range_df["QQQ_Win_Cum"] = (1 + range_df["QQQ_Ret"]).cumprod()
             
@@ -205,27 +207,20 @@ if not df_master.empty:
             qqq_pnl = (range_df["QQQ_Win_Cum"].iloc[-1] - 1) * 100
             
             p1, p2, p3 = st.columns(3)
-            p1.metric(f"Tactical Return ({custom_start} to {custom_end})", f"{strat_pnl:+.2f}%")
-            p2.metric(f"QQQ Buy & Hold Return", f"{qqq_pnl:+.2f}%")
-            p3.metric("Strategy Alpha Boost", f"{(strat_pnl - qqq_pnl):+.2f}%")
-    else:
-        st.error("Start Date must precede End Date settings.")
-
+            p1.metric("Custom Strategy P&L", f"{strat_pnl:+.2f}%")
+            p2.metric("Custom QQQ Buy & Hold P&L", f"{qqq_pnl:+.2f}%")
+            p3.metric("Custom Range Alpha Differential", f"{(strat_pnl - qqq_pnl):+.2f}%")
+            
+            # Interactive Line Graph for Custom Range
+            fig_range = go.Figure()
+            fig_range.add_trace(go.Scatter(x=range_df["Date_Only"], y=range_df["Strat_Win_Cum"]*100-100, name="Tactical Strategy", line=dict(color="#16A34A")))
+            fig_range.add_trace(go.Scatter(x=range_df["Date_Only"], y=range_df["QQQ_Win_Cum"]*100-100, name="QQQ Buy & Hold", line=dict(color="#7f7f7f")))
+            fig_range.update_layout(title="Custom Range Growth Trajectory (%)", hovermode="x unified", height=250, margin=dict(l=40, r=40, t=30, b=30))
+            st.plotly_chart(fig_range, use_container_width=True)
+            
     st.markdown("---")
     
     # ----------------------------------------------------
-    # SECTION 2: ROLLING TREND METRIC SUMMARY FOR HIGHLIGHTED DAY
+    # ENHANCEMENT 1 & 2: REVERSAL MARKERS & ACTIVE CYCLE P&L DISPLAY
     # ----------------------------------------------------
-    st.subheader("🔍 Historical Wave Metrics & Allocation Viewer")
-    lookup_date = st.date_input("Select Target Query Analysis Date:", value=max_sim_date, min_value=min_sim_date, max_value=max_sim_date)
-    
-    day_slice = df_master[df_master["Date_Only"] == lookup_date]
-    
-    if not day_slice.empty:
-        r = day_slice.iloc[0]
-        
-        # Calculate P&L since current trend started
-        wave_start_date = r["Regime_Start"]
-        wave_df = df_master[(df_master["Date"] >= wave_start_date) & (df_master["Date"] <= r["Date"])]
-        
-        wave_strat_return = (1 + wave_df["Strat_Ret"]).cumprod().iloc[-1] - 1
+    st.subheader("🔍 Rolling Trend Cycle Matrix Lookup")
