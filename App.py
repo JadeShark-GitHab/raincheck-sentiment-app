@@ -205,4 +205,4 @@ if not sim_df.empty:
             *   **Risk Liquidation:** TQQQ and Income structures are locked at **0.0%** exposure.
             *   **Capital Preservation:** Portfolio exposure completely defaults to **100.0% Cash Reserve (TBIL)** to eliminate compounding decay drawdown velocity.
             """)
-
+            
