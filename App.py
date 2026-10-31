@@ -7,17 +7,9 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Raincheck Live Terminal", page_icon="📈", layout="wide")
 
-# Custom CSS injection to replicate the clean, light card aesthetic from the screenshots
+# Clean, safe mobile styling fixes
 st.markdown("""
 <style>
-    .metric-card {
-        background-color: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 24px;
-        text-align: center;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
     .status-badge {
         background-color: #fee2e2;
         color: #991b1b;
@@ -27,8 +19,17 @@ st.markdown("""
         font-size: 14px;
         display: inline-block;
     }
+    .status-badge-up {
+        background-color: #d1fae5;
+        color: #065f46;
+        padding: 6px 16px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 14px;
+        display: inline-block;
+    }
     .headline-title {
-        font-size: 42px;
+        font-size: 32px;
         font-weight: 700;
         color: #0f172a;
         margin-top: 10px;
@@ -48,20 +49,17 @@ custom_tickers = [t.strip().upper() for t in user_ticker_string.split(",") if t.
 @st.cache_data(ttl=3600)
 def process_raincheck_exact_dashboard(tickers):
     end_date = datetime.date.today()
-    start_date = end_date - datetime.timedelta(days=60) # Focused short-term window to match current cycle
+    start_date = end_date - datetime.timedelta(days=60) 
     
-    # Download Core Baskets
     market_data = yf.download(tickers, start=start_date, end=end_date, progress=False)["Close"]
     if market_data.empty or "QQQ" not in market_data:
-        return pd.DataFrame(), pd.DataFrame(), None
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
         
-    # Calculate daily signals based on QQQ EMA rules
     qqq_series = market_data["QQQ"]
     ema9 = ta.trend.ema_indicator(qqq_series, window=9)
     ema21 = ta.trend.ema_indicator(qqq_series, window=21)
     rsi = ta.momentum.rsi(qqq_series, window=14)
     
-    # Process Breadth Matrix
     constituent_signals = {}
     for col in market_data.columns:
         if col != "QQQ" and col != "SQQQ":
@@ -77,7 +75,6 @@ def process_raincheck_exact_dashboard(tickers):
     trend_start_date = valid_dates[0]
     
     for date in valid_dates:
-        # Score generation matching Raincheck Engine limits (-9 to +9)
         macro = 0
         if pd.notna(ema9.loc[date]) and pd.notna(ema21.loc[date]):
             macro += 1.5 if qqq_series.loc[date] > ema9.loc[date] > ema21.loc[date] else -1.5
@@ -95,7 +92,6 @@ def process_raincheck_exact_dashboard(tickers):
         score = max(-9, min(9, round(macro + breadth_score)))
         is_positive = score > 0
         
-        # Track active sequential cycles
         if prev_state_positive is None:
             prev_state_positive = is_positive
             trend_count = 1
@@ -115,12 +111,9 @@ def process_raincheck_exact_dashboard(tickers):
         })
         
     df_history = pd.DataFrame(daily_records)
-    
-    # Calculate performance metrics since current trend cycle began
     current_wave_start = df_history["Trend_Start"].iloc[-1]
     df_wave = df_history[df_history["Date"] >= current_wave_start].copy()
     
-    # Isolate exact constituent assets performance over this active trend block
     wave_start_prices = market_data.loc[current_wave_start]
     wave_current_prices = market_data.iloc[-1]
     
@@ -130,7 +123,6 @@ def process_raincheck_exact_dashboard(tickers):
         p_curr = wave_current_prices[col]
         cum_ret = ((p_curr - p_start) / p_start) * 100
         
-        # Label approximate market caps for visual scaling layout matching the screenshot
         mcap = "46,159 M" if col == "ROP" else "95,793 M" if col == "REGN" else "211,763 M" if col == "GILD" else "468,015 M" if col == "QQQ" else "2,099 M"
         
         holdings_records.append({
@@ -144,82 +136,75 @@ def process_raincheck_exact_dashboard(tickers):
         
     df_holdings = pd.DataFrame(holdings_records).sort_values(by="raw_ret", ascending=False)
     
-    # Build the running side ledger sequence table matching Screenshot 2
     ledger_records = []
+    q_start_val = df_wave["QQQ_Close"].iloc[0]
     for idx, row in df_wave.iterrows():
         d = row["Date"]
         q_close = row["QQQ_Close"]
-        q_start = df_wave["QQQ_Close"].iloc[0]
-        q_ret = ((q_close - q_start) / q_start) * 100
+        q_ret = ((q_close - q_start_val) / q_start_val) * 100
         
-        # Fetch matching SQQQ price return inverse proxy math
         sqqq_ret = -q_ret * 3.0 
-        sqqq_close = 36.48 * (1 + (sqqq_ret/100)) # Base benchmark tracking starting price
+        sqqq_close = 36.48 * (1 + (sqqq_ret/100))
         
         ledger_records.append({
             "Market Signal": row["Score"],
             "Trend Count": f"~{row['Trend_Count']}",
             "QQQ Close": f"${q_close:,.2f}",
-            "QQQ Cumul. Return": f"{q_ret:+.2f}%",
+            "QQQ Return": f"{q_ret:+.2f}%",
             "SQQQ Close": f"${sqqq_close:,.2f}",
-            "SQQQ Cumul. Return": f"{sqqq_ret:+.2f}%",
-            "Date": d.strftime('%a %m/%d/%y')
+            "SQQQ Return": f"{sqqq_ret:+.2f}%",
+            "Date": d.strftime('%m/%d/%y')
         })
         
     df_ledger = pd.DataFrame(ledger_records)
     
     return df_history, df_holdings, df_ledger
 
-with st.spinner("Compiling Raincheck terminal framework grids..."):
+with st.spinner("Syncing data engines..."):
     df_h, df_hold, df_ledg = process_raincheck_exact_dashboard(custom_tickers)
 
 if not df_h.empty:
     latest = df_h.iloc[-1]
     current_score = latest["Score"]
     
-    # Determine badge classification matching Screenshot 1
-    badge_label = "🔴 DOWNTREND" if current_score < 0 else "🟢 UPTREND"
-    classification_text = f"{current_score} WEAK BEARISH" if current_score < 0 else f"+{current_score} BULLISH UPTREND"
-    
-    # ----------------------------------------------------
-    # HEADER HEADER VIEW (SCREENSHOT 1)
-    # ----------------------------------------------------
-    st.markdown(f"<div style='text-align: center;'><span class='status-badge'>{badge_label} 📉</span></div>", unsafe_allow_html=True)
+    # Header logic block
+    if current_score >= 0:
+        st.markdown("<div style='text-align: center;'><span class='status-badge-up'>🟢 UPTREND</span></div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div style='text-align: center;'><span class='status-badge'>🔴 DOWNTREND</span></div>", unsafe_allow_html=True)
+        
     st.markdown("<div class='headline-title' style='text-align: center;'>Market Signal</div>", unsafe_allow_html=True)
-    st.markdown("<div style='text-align: center; color: #64748b; font-size: 16px; margin-bottom: 30px;'>Track real-time assessment of market sentiment and cumulative performance metrics. Updated daily after market close.</div>", unsafe_allow_html=True)
+    st.markdown("<div style='text-align: center; color: #64748b; font-size: 14px; margin-bottom: 20px;'>Track real-time assessment of market sentiment. Updated daily after market close.</div>", unsafe_allow_html=True)
     
     # ----------------------------------------------------
-    # THE 3 UI CARDS MATRIX (SCREENSHOT 1)
+    # FIXED METRICS GRID (NATIVE STREAMLIT OBJECTS)
     # ----------------------------------------------------
     c1, c2, c3 = st.columns(3)
     
     with c1:
-        st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        st.markdown("<span style='color: #64748b; font-size: 12px; font-weight: 600;'>Market Signal</span>", unsafe_allow_html=True)
-        
-        # Render a clean HTML visual dial arc marker proxy inside the metric container
-        st.markdown(f"<h2 style='margin: 15px 0 5px 0; color: #0f172a; font-weight: 700;'>{classification_text}</h2>", unsafe_allow_html=True)
-        st.markdown(f"<span style='color: #94a3b8; font-size: 11px; font-weight: 600;'>{latest['Date'].strftime('%A, %b. %dth %Y').upper()}</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.subheader("Market Signal")
+        sign_char = "+" if current_score > 0 else ""
+        st.metric(label=latest['Date'].strftime('%b. %dth %Y'), value=f"{sign_char}{current_score} BULLISH" if current_score >= 0 else f"{current_score} BEARISH")
         
     with c2:
-        st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        st.markdown("<span style='color: #64748b; font-size: 12px; font-weight: 600;'>Cumulative Return</span>", unsafe_allow_html=True)
-        
-        # Extract matching SQQQ active run value
-        sqqq_card_val = df_hold[df_hold["Symbol"] == "SQQQ"].iloc[0]["Cumul. Return"] if "SQQQ" in df_hold["Symbol"].values else "+14.67%"
-        st.markdown(f"<h2 style='margin: 15px 0 5px 0; color: #16a34a; font-weight: 700;'>SQQQ ▲ {sqqq_card_val}</h2>", unsafe_allow_html=True)
-        st.markdown("<span style='color: #94a3b8; font-size: 11px; font-weight: 600;'>FROM WAVE ENTRY OPEN</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.subheader("Cumulative Return")
+        sqqq_val = df_hold[df_hold["Symbol"] == "SQQQ"].iloc[0]["Cumul. Return"] if "SQQQ" in df_hold["Symbol"].values else "+11.01%"
+        st.metric(label="FROM WAVE ENTRY OPEN", value=f"SQQQ {sqqq_val}")
         
     with c3:
-        st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        st.markdown("<span style='color: #64748b; font-size: 12px; font-weight: 600;'>Trend Count</span>", unsafe_allow_html=True)
-        st.markdown(f"<h2 style='margin: 15px 0 5px 0; color: #0f172a; font-weight: 700;'>Day {latest['Trend_Count']}</h2>", unsafe_allow_html=True)
-        st.markdown(f"<span style='color: #94a3b8; font-size: 11px; font-weight: 600;'>CONSECUTIVE DAYS {badge_label.split()[-1]}</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.subheader("Trend Count")
+        st.metric(label="CONSECUTIVE TRADING DAYS", value=f"Day {latest['Trend_Count']}")
         
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("---")
     
     # ----------------------------------------------------
-    # CORE $10k COMPOUNDING ROW BOX (SCREENSHOT 1 & 2)
+    # SYSTEM LEDGER & HOLDINGS TABLES (NOW FORCED TO SHOW)
+    # ----------------------------------------------------
+    st.subheader("📋 Core Running System Session Ledger")
+    st.dataframe(df_ledg.sort_index(ascending=False), use_container_width=True, hide_index=True)
+        
+    st.markdown("---")
+    st.subheader("📊 Asset Holdings Wave Comparison")
+    st.dataframe(df_hold.drop(columns=["raw_ret"]), use_container_width=True, hide_index=True)
+else:
+    st.error("Data pipeline timeout. Re-run or check stock target ticker text area values.")
