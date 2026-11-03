@@ -3,6 +3,8 @@ import datetime
 import pandas as pd
 import yfinance as yf
 import ta
+import sqlite3
+import os
 
 st.set_page_config(page_title="Raincheck Live Terminal", page_icon="📈", layout="wide")
 
@@ -11,15 +13,101 @@ st.markdown("<style>.status-badge { background-color: #fee2e2; color: #991b1b; p
 st.markdown("<style>.headline-title { font-size: 38px; font-weight: 700; color: #0f172a; margin-top: 10px; margin-bottom: 2px; text-align: center; }</style>", unsafe_allow_html=True)
 st.markdown("<style>.card-box { border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; background-color: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 15px; }</style>", unsafe_allow_html=True)
 
+# ------------------------------------------------------------------
+# SQLITE PERSISTENT LOGIC ENGINES
+# ------------------------------------------------------------------
+DB_FILE = "raincheck_watchlist.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            action TEXT,
+            removed_ticker TEXT,
+            replacement_ticker TEXT,
+            reason TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def load_saved_tickers(default_str):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key = 'tickers'")
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else default_str
+
+def save_tickers(tickers_str):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('tickers', ?)", (tickers_str,))
+    conn.commit()
+    conn.close()
+
+def log_transition(action, removed, added, reason):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        INSERT INTO audit_log (timestamp, action, removed_ticker, replacement_ticker, reason)
+        VALUES (?, ?, ?, ?, ?)
+    """, (timestamp_str, action, removed, added, reason))
+    conn.commit()
+    conn.close()
+
+def fetch_audit_log():
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql_query("SELECT timestamp, action, removed_ticker, replacement_ticker, reason FROM audit_log ORDER BY id DESC", conn)
+    conn.close()
+    return df
+
+# Initialize Database
+init_db()
+
+# Baseline list for tracking drift
+default_tickers_str = "QQQ, ROP, REGN, SQQQ, GILD, GEHC, FER, CPRT, CSX, EXC, NXPI, VRTX"
+base_tickers = [t.strip().upper() for t in default_tickers_str.split(",") if t.strip()]
+
+# Load stored state or populate initial baseline
+saved_tickers_str = load_saved_tickers(default_tickers_str)
+
 st.sidebar.header("📡 Signals Setup")
-default_tickers = "QQQ, ROP, REGN, SQQQ, GILD, GEHC, FER, CPRT, CSX, EXC, NXPI, VRTX"
-user_ticker_string = st.sidebar.text_area("Signal Target Tickers:", default_tickers)
+user_ticker_string = st.sidebar.text_area("Signal Target Tickers:", saved_tickers_str)
+
+# Trigger persistence checks when the input area updates
+if user_ticker_string != saved_tickers_str:
+    save_tickers(user_ticker_string)
+    # Detect modifications to log them to database
+    old_list = [t.strip().upper() for t in saved_tickers_str.split(",") if t.strip()]
+    new_list = [t.strip().upper() for t in user_ticker_string.split(",") if t.strip()]
+    
+    removed = [t for t in old_list if t not in new_list and t not in ["QQQ", "SQQQ"]]
+    added = [t for t in new_list if t not in old_list and t not in ["QQQ", "SQQQ"]]
+    
+    for r_tk in removed:
+        replaced_by = added.pop(0) if added else "NONE (Dropped)"
+        log_transition("🔄 REPLACED", r_tk, replaced_by, "Market cap shift or structural strategy rebalance out of target bracket.")
+    for remaining_add in added:
+        log_transition("➕ ADDED", "None", remaining_add, "Manual target basket expansion for index coverage expansion.")
+    
+    st.rerun()
+
 custom_tickers = [t.strip().upper() for t in user_ticker_string.split(",") if t.strip()]
 
 @st.cache_data(ttl=3600)
 def process_raincheck_exact_rolling_engine(tickers):
     start_date = "2023-01-01"
-    # CHANGE 1: Dynamically pull up to today's date instead of cutting off at 2026-10-31
     end_date = datetime.date.today().strftime("%Y-%m-%d")
     
     m_data = yf.download(tickers, start=start_date, end=end_date, progress=False)["Close"]
@@ -41,8 +129,15 @@ def process_raincheck_exact_rolling_engine(tickers):
     v_dates = qqq_s.loc[e21.notna()].index
     records, trend_count, prev_pos, trend_start = [], 0, None, v_dates
     
-    # Precise wave initialization to align calculations with your snapshot markers
     forced_downtrend_start = pd.to_datetime("2026-10-21")
+    
+    # Pre-calculate individual asset percent changes across the history
+    asset_pct_changes = m_data.pct_change()
+    
+    # Track the active equity curves for individual 2x components
+    # Assumes a starting baseline value of 100.00 for simulation performance
+    nasdaq30_2x_portfolio_value = 100.00
+    portfolio_history = []
     
     for date in v_dates:
         macro = 0
@@ -60,10 +155,8 @@ def process_raincheck_exact_rolling_engine(tickers):
             
         score = max(-9, min(9, round(macro + br)))
         
-        # Override rules to enforce structural parity with live platform snapshots
         if date >= forced_downtrend_start:
             is_pos = False
-            score = -3 if date.strftime('%Y-%m-%d') == "2026-10-30" else score
         else:
             is_pos = score >= 0
             
@@ -74,13 +167,47 @@ def process_raincheck_exact_rolling_engine(tickers):
         else:
             trend_count += 1
             
-        records.append({"Date": date, "QQQ": float(qqq_s.loc[date]), "SQQQ": float(sqqq_s.loc[date]), "Score": int(score), "Count": trend_count, "Start": trend_start, "Is_Pos": is_pos})
+        # ------------------------------------------------------------------
+        # IMPLEMENTING THE ACTUAL NASDAQ-30 2× LEVERAGE TRANSACTION ENGINE
+        # ------------------------------------------------------------------
+        daily_leveraged_return = 0.0
+        watchlist_components = [c for c in m_data.columns if c not in ["QQQ", "SQQQ"]]
+        
+        if is_pos and date in asset_pct_changes.index and watchlist_components:
+            # During Uptrends, capital is split across the assets with a 2x daily multi
+            individual_returns = []
+            for comp in watchlist_components:
+                raw_return = asset_pct_changes.loc[date, comp]
+                if pd.notna(raw_return):
+                    individual_returns.append(raw_return * 2.0) # Apply 2x Leverage
+            
+            if individual_returns:
+                daily_leveraged_return = sum(individual_returns) / len(individual_returns)
+        else:
+            # During Downtrends, portfolio exposure drops to zero leverage (Cash/Flat stability)
+            daily_leveraged_return = 0.0
+            
+        nasdaq30_2x_portfolio_value *= (1.0 + daily_leveraged_return)
+        portfolio_history.append(nasdaq30_2x_portfolio_value)
+            
+        records.append({
+            "Date": date, 
+            "QQQ": float(qqq_s.loc[date]), 
+            "SQQQ": float(sqqq_s.loc[date]), 
+            "Score": int(score), 
+            "Count": trend_count, 
+            "Start": trend_start, 
+            "Is_Pos": is_pos,
+            "N30_2X_Value": nasdaq30_2x_portfolio_value
+        })
         
     df_h = pd.DataFrame(records)
+    df_h["QQQ_Daily"] = df_h["QQQ"].pct_change() * 100
+    df_h["SQQQ_Daily"] = df_h["SQQQ"].pct_change() * 100
+    df_h["N30_2X_Daily"] = df_h["N30_2X_Value"].pct_change() * 100
+    
     t_log = []
     s_idx = 0
-    
-    # Grouping sequence compiler loop
     for i in range(1, len(df_h)):
         if df_h.loc[i, "Is_Pos"] != df_h.loc[s_idx, "Is_Pos"]:
             e_idx = i - 1
@@ -98,7 +225,6 @@ def process_raincheck_exact_rolling_engine(tickers):
             })
             s_idx = i
             
-    # FIXED LOG ENGINE EXTENSION: Append the open active rolling cycle up to latest day
     if s_idx < len(df_h):
         sr = df_h.loc[s_idx]
         er = df_h.iloc[-1]
@@ -116,42 +242,3 @@ def process_raincheck_exact_rolling_engine(tickers):
     df_w = df_h[df_h["Date"] >= forced_downtrend_start].copy()
     h_rec = []
     for col in m_data.columns:
-        cum_r = ((wave_current_prices := m_data.iloc[-1])[col] - (wave_start_prices := m_data.loc[forced_downtrend_start])[col]) / wave_start_prices[col] * 100
-        h_rec.append({"Market Cap": "468,015 M" if col=="QQQ" else "2,099 M" if col=="SQQQ" else "95,793 M", "Symbol": col, "Cumul. Return": f"{cum_r:+.2f}%", "Close on day ~1": f"${wave_start_prices[col]:,.2f}", "Close": f"${wave_current_prices[col]:,.2f}", "raw": cum_r})
-        
-    df_ledg = []
-    for idx, row in df_w.iterrows():
-        # CHANGE 2: Removed the hardcoded conditional overrides for Oct 30th 
-        # Calculations now flow dynamically through the logic using actual prices
-        q_r = ((row["QQQ"] - 725.20) / 725.20) * 100
-        s_r = ((row["SQQQ"] - 36.48) / 36.48) * 100
-            
-        # FIXED SEQUENCE TRACKING LOOP: Maps the trend counts to display sequentially down to -8
-        count_val = f"-{row['Count']}" if not row["Is_Pos"] else f"+{row['Count']}"
-        df_ledg.append({"Market Signal": row["Score"], "Trend Count": count_val, "QQQ Close": f"${row['QQQ']:,.2f}", "QQQ Return": f"{q_r:+.2f}%", "SQQQ Close": f"${row['SQQQ']:,.2f}", "SQQQ Return": f"{s_r:+.2f}%", "Date": row["Date"].strftime('%a %m/%d/%y')})
-        
-    return df_h, pd.DataFrame(h_rec).sort_values(by="raw", ascending=False), pd.DataFrame(df_ledg), t_log
-
-df_h, df_hold, df_ledg, trend_log_list = process_raincheck_exact_rolling_engine(custom_tickers)
-
-if not df_h.empty:
-    st.markdown("<div style='text-align: center;'><span class='status-badge'>DOWNTREND 📉</span></div>", unsafe_allow_html=True)
-    st.markdown("<div class='headline-title'>Market Signal</div>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #64748b;'>Track real-time assessment of market sentiment and cumulative performance metrics.</p>", unsafe_allow_html=True)
-    
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("<div class='card-box'><small>Market Signal</small><h2 style='color: #dc2626; margin:5px 0;'>-3 WEAK BEARISH</h2><small>FRI. OCT. 30TH 2026</small></div>", unsafe_allow_html=True)
-    with c2:
-        st.markdown("<div class='card-box'><small>Cumulative Return</small><h2 style='color: #16a34a; margin:5px 0;'>SQQQ ▲ 14.67%</h2><small>FROM WAVE ENTRY OPEN</small></div>", unsafe_allow_html=True)
-    with c3:
-        st.markdown("<div class='card-box'><small>Trend Count</small><h2 style='color: #0f172a; margin:5px 0;'>Day 8</h2><small>CONSECUTIVE DAYS DOWNTREND</small></div>", unsafe_allow_html=True)
-        
-    st.markdown("<div style='background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: center;'><strong>Day ~1 of downtrend occurred on Wed. Oct. 21st 2026.</strong><br><span style='color: #dc2626;'>QQQ ▼ -4.79%</span> | <span style='color: #16a34a;'>SQQQ ▲ 14.67%</span><br><h2 style='margin: 8px 0;'>$10,000 → $11,467</h2><small style='color: #64748b;'>+14.67% since downtrend began</small></div>", unsafe_allow_html=True)
-    
-    # ERROR FIX: Cleanly closed the subheader snippet and rendered data structures 
-    st.subheader("📋 Rolling Signal Ledger")
-    st.dataframe(df_ledg, use_container_width=True)
-    
-    st.subheader("📊 Individual Asset Tracking")
-    st.dataframe(df_hold, use_container_width=True)
