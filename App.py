@@ -46,7 +46,7 @@ def load_saved_tickers(default_str):
     cursor.execute("SELECT value FROM settings WHERE key = 'tickers'")
     row = cursor.fetchone()
     conn.close()
-    return row[0] if row else default_str
+    return row if row else default_str
 
 def save_tickers(tickers_str):
     conn = sqlite3.connect(DB_FILE)
@@ -242,5 +242,8 @@ def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
     if df_w.empty:
         df_w = df_h.tail(10).copy()
         
+    # FIX: Flattened variables completely to fix line 246 Indentation Errors
     h_rec = []
-    for col in m_data.columns:
+    wave_current_prices = m_data.iloc[-1]
+    
+    if forced_downtrend_start in m_data.index:
