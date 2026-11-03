@@ -85,10 +85,12 @@ saved_tickers_str = load_saved_tickers(default_tickers_str)
 st.sidebar.header("📡 Signals Setup")
 user_ticker_string = st.sidebar.text_area("Signal Target Tickers:", saved_tickers_str)
 
+# DYNAMIC RULE ADJUSTMENT: Safety Holding Configuration Panel
+safety_mode = st.sidebar.selectbox("Downtrend Safety Target Asset:", ["0% Cash (Flat)", "SQQQ (Inverse Short)"])
+
 # Trigger persistence checks when the input area updates
 if user_ticker_string != saved_tickers_str:
     save_tickers(user_ticker_string)
-    # Detect modifications to log them to database
     old_list = [t.strip().upper() for t in saved_tickers_str.split(",") if t.strip()]
     new_list = [t.strip().upper() for t in user_ticker_string.split(",") if t.strip()]
     
@@ -106,7 +108,7 @@ if user_ticker_string != saved_tickers_str:
 custom_tickers = [t.strip().upper() for t in user_ticker_string.split(",") if t.strip()]
 
 @st.cache_data(ttl=3600)
-def process_raincheck_exact_rolling_engine(tickers):
+def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
     start_date = "2023-01-01"
     end_date = datetime.date.today().strftime("%Y-%m-%d")
     
@@ -130,14 +132,10 @@ def process_raincheck_exact_rolling_engine(tickers):
     records, trend_count, prev_pos, trend_start = [], 0, None, v_dates
     
     forced_downtrend_start = pd.to_datetime("2026-10-21")
-    
-    # Pre-calculate individual asset percent changes across the history
     asset_pct_changes = m_data.pct_change()
     
-    # Track the active equity curves for individual 2x components
-    # Assumes a starting baseline value of 100.00 for simulation performance
-    nasdaq30_2x_portfolio_value = 100.00
-    portfolio_history = []
+    # Portfolio simulation parameters initialized at $10,000 for visibility matching original snapshot
+    nasdaq30_2x_portfolio_value = 10000.00
     
     for date in v_dates:
         macro = 0
@@ -168,27 +166,28 @@ def process_raincheck_exact_rolling_engine(tickers):
             trend_count += 1
             
         # ------------------------------------------------------------------
-        # IMPLEMENTING THE ACTUAL NASDAQ-30 2× LEVERAGE TRANSACTION ENGINE
+        # ADJUSTABLE DOWNTREND EXECUTION SIMULATION MECHANISM
         # ------------------------------------------------------------------
         daily_leveraged_return = 0.0
         watchlist_components = [c for c in m_data.columns if c not in ["QQQ", "SQQQ"]]
         
         if is_pos and date in asset_pct_changes.index and watchlist_components:
-            # During Uptrends, capital is split across the assets with a 2x daily multi
             individual_returns = []
             for comp in watchlist_components:
                 raw_return = asset_pct_changes.loc[date, comp]
                 if pd.notna(raw_return):
-                    individual_returns.append(raw_return * 2.0) # Apply 2x Leverage
+                    individual_returns.append(raw_return * 2.0)
             
             if individual_returns:
                 daily_leveraged_return = sum(individual_returns) / len(individual_returns)
         else:
-            # During Downtrends, portfolio exposure drops to zero leverage (Cash/Flat stability)
-            daily_leveraged_return = 0.0
+            # Sourced via selection rules panel modifications
+            if selected_safety_mode == "SQQQ (Inverse Short)" and date in asset_pct_changes.index:
+                daily_leveraged_return = asset_pct_changes.loc[date, "SQQQ"]
+            else:
+                daily_leveraged_return = 0.0
             
         nasdaq30_2x_portfolio_value *= (1.0 + daily_leveraged_return)
-        portfolio_history.append(nasdaq30_2x_portfolio_value)
             
         records.append({
             "Date": date, 
