@@ -88,8 +88,11 @@ user_ticker_string = st.sidebar.text_area("Signal Target Tickers:", saved_ticker
 # DYNAMIC RULE ADJUSTMENT: Safety Holding Configuration Panel
 safety_mode = st.sidebar.selectbox("Downtrend Safety Target Asset:", ["0% Cash (Flat)", "SQQQ (Inverse Short)"])
 
-# Trigger persistence checks when the input area updates
-if user_ticker_string != saved_tickers_str:
+# STRING SANITIZER FIX: Cleans out whitespaces and commas to avoid an infinite rerun loop loop
+def sanitize_string(s):
+    return "".join(s.split()).upper().replace(",", "")
+
+if sanitize_string(user_ticker_string) != sanitize_string(saved_tickers_str):
     save_tickers(user_ticker_string)
     old_list = [t.strip().upper() for t in saved_tickers_str.split(",") if t.strip()]
     new_list = [t.strip().upper() for t in user_ticker_string.split(",") if t.strip()]
@@ -99,7 +102,7 @@ if user_ticker_string != saved_tickers_str:
     
     for r_tk in removed:
         replaced_by = added.pop(0) if added else "NONE (Dropped)"
-        log_transition("🔄 REPLACED", r_tk, replaced_by, "Market cap shift or structural rebalance out of target bracket.")
+        log_transition("🔄 REPLACED", r_tk, replaced_by, "Market cap shift or structural strategy rebalance out of target bracket.")
     for remaining_add in added:
         log_transition("➕ ADDED", "None", remaining_add, "Manual target basket expansion for index coverage expansion.")
     
@@ -236,5 +239,3 @@ def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
     h_rec = []
     for col in m_data.columns:
         cum_r = ((wave_current_prices := m_data.iloc[-1])[col] - (wave_start_prices := m_data.loc[forced_downtrend_start])[col]) / wave_start_prices[col] * 100
-        h_rec.append({"Market Cap": "468,015 M" if col=="QQQ" else "2,099 M" if col=="SQQQ" else "95,793 M", "Symbol": col, "Cumul. Return": f"{cum_r:+.2f}%", "Close on day ~1": f"${wave_start_prices[col]:,.2f}", "Close": f"${wave_current_prices[col]:,.2f}", "raw": cum_r})
-        
