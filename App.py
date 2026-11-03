@@ -242,8 +242,7 @@ def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
     if df_w.empty:
         df_w = df_h.tail(10).copy()
         
-    # FIX: Flattened variables completely to fix line 246 Indentation Errors
+    # INDENTATION REPAIR ENGINE: Standardized spacing constraints enforced cleanly
     h_rec = []
     wave_current_prices = m_data.iloc[-1]
     
-    if forced_downtrend_start in m_data.index:
