@@ -11,9 +11,10 @@ st.markdown("<style>.status-badge { background-color: #fee2e2; color: #991b1b; p
 st.markdown("<style>.headline-title { font-size: 38px; font-weight: 700; color: #0f172a; margin-top: 10px; margin-bottom: 2px; text-align: center; }</style>", unsafe_allow_html=True)
 st.markdown("<style>.card-box { border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; background-color: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.02); margin-bottom: 15px; }</style>", unsafe_allow_html=True)
 
-st.sidebar.header("📡 Signals Setup")
-default_tickers_str = "QQQ, ROP, REGN, SQQQ, GILD, GEHC, FER, CPRT, CSX, EXC, NXPI, VRTX"
-user_ticker_string = st.sidebar.text_area("Signal Target Tickers:", default_tickers_str)
+# Collapsible Sidebar configuration to maximize space on mobile screens
+with st.sidebar.expander("📡 Signals Setup & Config", expanded=False):
+    default_tickers_str = "QQQ, ROP, REGN, SQQQ, GILD, GEHC, FER, CPRT, CSX, EXC, NXPI, VRTX"
+    user_ticker_string = st.text_area("Signal Target Tickers:", default_tickers_str, height=200)
 
 # Parse lists to audit transitions
 base_tickers = [t.strip().upper() for t in default_tickers_str.split(",") if t.strip()]
