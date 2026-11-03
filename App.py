@@ -88,7 +88,7 @@ user_ticker_string = st.sidebar.text_area("Signal Target Tickers:", saved_ticker
 # DYNAMIC RULE ADJUSTMENT: Safety Holding Configuration Panel
 safety_mode = st.sidebar.selectbox("Downtrend Safety Target Asset:", ["0% Cash (Flat)", "SQQQ (Inverse Short)"])
 
-# STRING SANITIZER FIX: Cleans out whitespaces and commas to avoid an infinite rerun loop loop
+# STRING SANITIZER: Cleans out whitespaces and commas to avoid an infinite rerun loop
 def sanitize_string(s):
     return "".join(s.split()).upper().replace(",", "")
 
@@ -198,6 +198,9 @@ def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
         })
         
     df_h = pd.DataFrame(records)
+    if df_h.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), []
+        
     df_h["QQQ_Daily"] = df_h["QQQ"].pct_change() * 100
     df_h["SQQQ_Daily"] = df_h["SQQQ"].pct_change() * 100
     df_h["N30_2X_Daily"] = df_h["N30_2X_Value"].pct_change() * 100
@@ -236,6 +239,8 @@ def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
         })
             
     df_w = df_h[df_h["Date"] >= forced_downtrend_start].copy()
+    if df_w.empty:
+        df_w = df_h.tail(10).copy()
+        
     h_rec = []
     for col in m_data.columns:
-        cum_r = ((wave_current_prices := m_data.iloc[-1])[col] - (wave_start_prices := m_data.loc[forced_downtrend_start])[col]) / wave_start_prices[col] * 100
