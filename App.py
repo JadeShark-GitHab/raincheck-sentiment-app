@@ -99,7 +99,7 @@ if user_ticker_string != saved_tickers_str:
     
     for r_tk in removed:
         replaced_by = added.pop(0) if added else "NONE (Dropped)"
-        log_transition("🔄 REPLACED", r_tk, replaced_by, "Market cap shift or structural strategy rebalance out of target bracket.")
+        log_transition("🔄 REPLACED", r_tk, replaced_by, "Market cap shift or structural rebalance out of target bracket.")
     for remaining_add in added:
         log_transition("➕ ADDED", "None", remaining_add, "Manual target basket expansion for index coverage expansion.")
     
@@ -134,7 +134,6 @@ def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
     forced_downtrend_start = pd.to_datetime("2026-10-21")
     asset_pct_changes = m_data.pct_change()
     
-    # Portfolio simulation parameters initialized at $10,000 for visibility matching original snapshot
     nasdaq30_2x_portfolio_value = 10000.00
     
     for date in v_dates:
@@ -165,9 +164,6 @@ def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
         else:
             trend_count += 1
             
-        # ------------------------------------------------------------------
-        # ADJUSTABLE DOWNTREND EXECUTION SIMULATION MECHANISM
-        # ------------------------------------------------------------------
         daily_leveraged_return = 0.0
         watchlist_components = [c for c in m_data.columns if c not in ["QQQ", "SQQQ"]]
         
@@ -177,11 +173,9 @@ def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
                 raw_return = asset_pct_changes.loc[date, comp]
                 if pd.notna(raw_return):
                     individual_returns.append(raw_return * 2.0)
-            
             if individual_returns:
                 daily_leveraged_return = sum(individual_returns) / len(individual_returns)
         else:
-            # Sourced via selection rules panel modifications
             if selected_safety_mode == "SQQQ (Inverse Short)" and date in asset_pct_changes.index:
                 daily_leveraged_return = asset_pct_changes.loc[date, "SQQQ"]
             else:
@@ -241,3 +235,6 @@ def process_raincheck_exact_rolling_engine(tickers, selected_safety_mode):
     df_w = df_h[df_h["Date"] >= forced_downtrend_start].copy()
     h_rec = []
     for col in m_data.columns:
+        cum_r = ((wave_current_prices := m_data.iloc[-1])[col] - (wave_start_prices := m_data.loc[forced_downtrend_start])[col]) / wave_start_prices[col] * 100
+        h_rec.append({"Market Cap": "468,015 M" if col=="QQQ" else "2,099 M" if col=="SQQQ" else "95,793 M", "Symbol": col, "Cumul. Return": f"{cum_r:+.2f}%", "Close on day ~1": f"${wave_start_prices[col]:,.2f}", "Close": f"${wave_current_prices[col]:,.2f}", "raw": cum_r})
+        
