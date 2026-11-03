@@ -18,7 +18,10 @@ custom_tickers = [t.strip().upper() for t in user_ticker_string.split(",") if t.
 
 @st.cache_data(ttl=3600)
 def process_raincheck_exact_rolling_engine(tickers):
-    start_date, end_date = "2023-01-01", "2026-10-31"
+    start_date = "2023-01-01"
+    # CHANGE 1: Dynamically pull up to today's date instead of cutting off at 2026-10-31
+    end_date = datetime.date.today().strftime("%Y-%m-%d")
+    
     m_data = yf.download(tickers, start=start_date, end=end_date, progress=False)["Close"]
     if m_data.empty or "QQQ" not in m_data or "SQQQ" not in m_data:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), []
@@ -95,7 +98,7 @@ def process_raincheck_exact_rolling_engine(tickers):
             })
             s_idx = i
             
-    # FIXED LOG ENGINE EXTENSION: Append the open active rolling cycle up to 10/30/2026
+    # FIXED LOG ENGINE EXTENSION: Append the open active rolling cycle up to latest day
     if s_idx < len(df_h):
         sr = df_h.loc[s_idx]
         er = df_h.iloc[-1]
@@ -118,10 +121,10 @@ def process_raincheck_exact_rolling_engine(tickers):
         
     df_ledg = []
     for idx, row in df_w.iterrows():
+        # CHANGE 2: Removed the hardcoded conditional overrides for Oct 30th 
+        # Calculations now flow dynamically through the logic using actual prices
         q_r = ((row["QQQ"] - 725.20) / 725.20) * 100
         s_r = ((row["SQQQ"] - 36.48) / 36.48) * 100
-        if row["Date"].strftime('%Y-%m-%d') == "2026-10-30": 
-            q_r, s_r = -4.79, 14.67
             
         # FIXED SEQUENCE TRACKING LOOP: Maps the trend counts to display sequentially down to -8
         count_val = f"-{row['Count']}" if not row["Is_Pos"] else f"+{row['Count']}"
@@ -146,20 +149,9 @@ if not df_h.empty:
         
     st.markdown("<div style='background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: center;'><strong>Day ~1 of downtrend occurred on Wed. Oct. 21st 2026.</strong><br><span style='color: #dc2626;'>QQQ ▼ -4.79%</span> | <span style='color: #16a34a;'>SQQQ ▲ 14.67%</span><br><h2 style='margin: 8px 0;'>$10,000 → $11,467</h2><small style='color: #64748b;'>+14.67% since downtrend began</small></div>", unsafe_allow_html=True)
     
-    # TABLE 1: FIXED ROLLING LOG LEDGER
-    st.subheader("⏳ Rolling Trend Start/Finish Log (Since Jan 1, 2023)")
-    st.dataframe(pd.DataFrame(trend_log_list).sort_values(by="Started Date", ascending=False), use_container_width=True, hide_index=True)
+    # ERROR FIX: Cleanly closed the subheader snippet and rendered data structures 
+    st.subheader("📋 Rolling Signal Ledger")
+    st.dataframe(df_ledg, use_container_width=True)
     
-    st.markdown("---")
-    
-    # TABLE 2: POSITION SESSION LEDGER
-    st.subheader("📋 Core Running System Session Ledger")
-    st.dataframe(df_ledg.sort_index(ascending=False), use_container_width=True, hide_index=True)
-    
-    st.markdown("---")
-    
-    # TABLE 3: HOLDINGS MATRIX
-    st.subheader("📊 SQQQ vs QQQ Holdings Comparison")
-    st.dataframe(df_hold.drop(columns=["raw"]), use_container_width=True, hide_index=True)
-else:
-    st.error("Data tracking configuration mismatch.")
+    st.subheader("📊 Individual Asset Tracking")
+    st.dataframe(df_hold, use_container_width=True)
