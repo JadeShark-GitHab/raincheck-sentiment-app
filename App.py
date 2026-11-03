@@ -184,7 +184,7 @@ if not df_h.empty:
     </div>
     """, unsafe_allow_html=True)
     # ---------------------------------------------------------
-    # DATA DISPLAY TABLES (Append to the bottom of your script)
+    # DATA DISPLAY TABLES (Sequential Vertical Layout)
     # ---------------------------------------------------------
     st.markdown("---")
     
@@ -199,22 +199,20 @@ if not df_h.empty:
 
     st.markdown("---")
 
-    # 2. Rolling Signal Ledger & Individual Asset Tracking Side-by-Side
-    col_ledger, col_assets = st.columns([2, 1])
-    
-    with col_ledger:
-        st.subheader("⏱️ Rolling Signal Ledger")
-        if not df_ledg.empty:
-            # Reverse order to view today's active session at the top of the ledger
-            st.dataframe(df_ledg.iloc[::-1].reset_index(drop=True), use_container_width=True)
-        else:
-            st.info("No ledger entries available for the current wave.")
+    # 2. Rolling Signal Ledger
+    st.subheader("⏱️ Rolling Signal Ledger")
+    if not df_ledg.empty:
+        # Reverse order to view today's active session at the top of the ledger
+        st.dataframe(df_ledg.iloc[::-1].reset_index(drop=True), use_container_width=True)
+    else:
+        st.info("No ledger entries available for the current wave.")
 
-    with col_assets:
-        st.subheader("🔍 Individual Asset Tracking")
-        if not df_hold.empty:
-            # Drop the internal raw sorting column before rendering
-            st.dataframe(df_hold.drop(columns=["raw"]), use_container_width=True, hide_index=True)
-        else:
-            st.info("No asset tracking metrics generated.")
-            
+    st.markdown("---")
+
+    # 3. Individual Asset Tracking (Placed underneath the Ledger)
+    st.subheader("🔍 Individual Asset Tracking")
+    if not df_hold.empty:
+        # Drop the internal raw sorting column before rendering
+        st.dataframe(df_hold.drop(columns=["raw"]), use_container_width=True, hide_index=True)
+    else:
+        st.info("No asset tracking metrics generated.")
