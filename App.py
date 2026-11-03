@@ -4,7 +4,12 @@ import pandas as pd
 import yfinance as yf
 import ta
 
-st.set_page_config(page_title="Raincheck Live Terminal", page_icon="📈", layout="wide")
+st.set_page_config(
+    page_title="Raincheck Live Terminal", 
+    page_icon="📈", 
+    layout="wide",
+    initial_sidebar_state="collapsed"  # Automatically collapses the left sidebar on load
+)
 
 # Custom inline styles ensuring correct bearish red accent overrides
 st.markdown("<style>.status-badge { background-color: #fee2e2; color: #991b1b; padding: 6px 16px; border-radius: 20px; font-weight: 600; font-size: 14px; display: inline-block; text-align: center; }</style>", unsafe_allow_html=True)
