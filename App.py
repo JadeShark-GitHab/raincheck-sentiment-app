@@ -120,8 +120,11 @@ def process_raincheck_exact_rolling_engine(tickers):
         
     df_ledg = []
     for idx, row in df_w.iterrows():
-        q_cum = ((row["QQQ"] - 725.20) / 725.20) * 100
-        s_cum = ((row["SQQQ"] - 36.48) / 36.48) * 100
+        # Dynamically calculated from wave baseline instead of hardcoded baseline denominators
+        q_start = m_data.loc[forced_downtrend_start, "QQQ"]
+        s_start = m_data.loc[forced_downtrend_start, "SQQQ"]
+        q_cum = ((row["QQQ"] - q_start) / q_start) * 100
+        s_cum = ((row["SQQQ"] - s_start) / s_start) * 100
         
         q_daily = row["QQQ_Daily"]
         s_daily = row["SQQQ_Daily"]
@@ -150,47 +153,33 @@ if not df_h.empty:
     st.markdown("<div class='headline-title'>Market Signal</div>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #64748b;'>Track real-time assessment of market sentiment and cumulative performance metrics.</p>", unsafe_allow_html=True)
     
+    # Extract live final values from calculation engine
+    latest_row = df_h.iloc[-1]
+    latest_score = latest_row["Score"]
+    latest_count = latest_row["Count"]
+    latest_date_str = latest_row["Date"].strftime('%a. %b. %dth %Y').upper()
+    
+    # Pull dynamic cumulative returns matching the ledger engine logic
+    qqq_start = df_h[df_h["Date"] == "2026-10-21"]["QQQ"].values[0]
+    sqqq_start = df_h[df_h["Date"] == "2026-10-21"]["SQQQ"].values[0]
+    live_qqq_cum = ((latest_row["QQQ"] - qqq_start) / qqq_start) * 100
+    live_sqqq_cum = ((latest_row["SQQQ"] - sqqq_start) / sqqq_start) * 100
+    
+    # Calculate performance value on an initial $10,000 investment
+    simulated_value = 10000 * (1 + (live_sqqq_cum / 100))
+    
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown("<div class='card-box'><small>Market Signal</small><h2 style='color: #dc2626; margin:5px 0;'>-3 WEAK BEARISH</h2><small>FRI. OCT. 30TH 2026</small></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='card-box'><small>Market Signal</small><h2 style='color: #dc2626; margin:5px 0;'>{latest_score} WEAK BEARISH</h2><small>{latest_date_str}</small></div>", unsafe_allow_html=True)
     with c2:
-        st.markdown("<div class='card-box'><small>Cumulative Return</small><h2 style='color: #16a34a; margin:5px 0;'>SQQQ ▲ 14.67%</h2><small>FROM WAVE ENTRY OPEN</small></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='card-box'><small>Cumulative Return</small><h2 style='color: #16a34a; margin:5px 0;'>SQQQ ▲ {live_sqqq_cum:.2f}%</h2><small>FROM WAVE ENTRY OPEN</small></div>", unsafe_allow_html=True)
     with c3:
-        st.markdown("<div class='card-box'><small>Trend Count</small><h2 style='color: #0f172a; margin:5px 0;'>Day 8</h2><small>CONSECUTIVE DAYS DOWNTREND</small></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='card-box'><small>Trend Count</small><h2 style='color: #0f172a; margin:5px 0;'>Day {latest_count}</h2><small>CONSECUTIVE DAYS DOWNTREND</small></div>", unsafe_allow_html=True)
         
-    st.markdown("<div style='background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: center;'><strong>Day ~1 of downtrend occurred on Wed. Oct. 21st 2026.</strong><br><span style='color: #dc2626;'>QQQ ▼ -4.79%</span> | <span style='color: #16a34a;'>SQQQ ▲ 14.67%</span><br><h2 style='margin: 8px 0;'>$10,000 → $11,467</h2><small style='color: #64748b;'>+14.67% since downtrend began</small></div>", unsafe_allow_html=True)
-    
-    # NEW COMPONENT: Watchlist Transition Audit Ledger Engine
-    st.subheader("📡 Watchlist Transition Log")
-    removed_tickers = [ticker for ticker in base_tickers if ticker not in custom_tickers and ticker not in ["QQQ", "SQQQ"]]
-    added_tickers = [ticker for ticker in custom_tickers if ticker not in base_tickers and ticker not in ["QQQ", "SQQQ"]]
-    
-    if removed_tickers or added_tickers:
-        audit_data = []
-        timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        for r_tk in removed_tickers:
-            replaced_by = added_tickers.pop(0) if added_tickers else "NONE (Dropped)"
-            audit_data.append({
-                "Timestamp": timestamp_str,
-                "Action": "🔄 REPLACED",
-                "Removed Ticker": r_tk,
-                "Replacement Ticker": replaced_by,
-                "Reason Given": "Market cap shift out of target bracket or structural strategy rebalance."
-            })
-        for remaining_add in added_tickers:
-            audit_data.append({
-                "Timestamp": timestamp_str,
-                "Action": "➕ ADDED",
-                "Removed Ticker": "None",
-                "Replacement Ticker": remaining_add,
-                "Reason Given": "Manual target basket expansion for index coverage expansion."
-            })
-        st.dataframe(pd.DataFrame(audit_data), use_container_width=True)
-    else:
-        st.info("✅ Core Watchlist matches the baseline strategy holdings. No modifications detected.")
-
-    st.subheader("📋 Rolling Signal Ledger")
-    st.dataframe(df_ledg, use_container_width=True)
-    
-    st.subheader("📊 Individual Asset Tracking")
-    st.dataframe(df_hold, use_container_width=True)
+    st.markdown(f"""
+    <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: center;'>
+        <strong>Day 1 of downtrend occurred on Wed. Oct. 21st 2026.</strong><br>
+        <span style='color: #dc2626;'>QQQ ▼ {live_qqq_cum:+.2f}%</span> | <span style='color: #16a34a;'>SQQQ ▲ {live_sqqq_cum:+.2f}%</span><br>
+        <h2 style='margin: 8px 0;'>$10,000 → ${simulated_value:,.0f}</h2>
+    </div>
+    """, unsafe_allow_html=True)
